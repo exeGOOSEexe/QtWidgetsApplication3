@@ -5,12 +5,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_player = new AudioPlayer(this);
     setupUi();
     applyDarkTheme();
-    // Подключаем кнопки к функциям
+
     connect(m_btnPlay, &QPushButton::clicked, this, &MainWindow::onPlayClicked);
-    connect(m_btnStop, &QPushButton::clicked, this, &MainWindow::onStopClicked);
     connect(m_playlist, &QListWidget::itemDoubleClicked, this, &MainWindow::onTrackDoubleClicked);
+    connect(m_btnNext, &QPushButton::clicked, this, &MainWindow::onNextClicked);
+    connect(m_btnPrev, &QPushButton::clicked, this, &MainWindow::onPrevClicked);
+    connect(m_btnPause, &QPushButton::clicked, this, &MainWindow::onPauseClicked);
+
 	m_networkManager = new QNetworkAccessManager(this);
 	connect(m_networkManager, &QNetworkAccessManager::finished, this, &MainWindow::onTracksReceived);
+
     QNetworkRequest request(QUrl("http://ip:port/tracks"));
 	m_networkManager->get(request);
 }
@@ -70,32 +74,50 @@ void MainWindow::onTracksReceived(QNetworkReply* reply) {
 void MainWindow::onPlayClicked() {
     QListWidgetItem* item = m_playlist->currentItem();
     if (item) {
-        QString url = item->text();
-        m_lblCurrentTrack->setText("Играет: " + url);
+        // ИСПРАВЛЕНИЕ: Берем реальную ссылку из словаря m_trackUrls, а не из текста
+        QString url = m_trackUrls[item];
+
+        m_lblCurrentTrack->setText("Играет: " + item->text());
         m_player->play(url.toStdString());
-        
+
         m_btnPlay->hide();
-        m_btnStop->show();
+        m_btnPause->show();
     }
 }
 
-void MainWindow::onStopClicked() {
-    m_player->stop();
-    m_lblCurrentTrack->setText("Остановлено");
-    
-    m_btnStop->hide();
-    m_btnPlay->show();
+void MainWindow::onTrackDoubleClicked(QListWidgetItem* item) {
+    // Выделяем элемент, чтобы onPlayClicked знал, что играть
+    m_playlist->setCurrentItem(item);
+
+    // Просто вызываем логику кнопки Play, чтобы не дублировать код
+    onPlayClicked();
 }
 
 void MainWindow::onNextClicked() {
-    // Здесь можно добавить код для перехода к следующему треку
+    int count = m_playlist->count();
+    if (count == 0) return; // Если плейлист пуст, ничего не делаем
+
+    int currentRow = m_playlist->currentRow();
+
+    // Вычисляем следующий индекс. Если дошли до конца, перепрыгиваем в начало (0)
+    int nextRow = (currentRow + 1) % count;
+
+    m_playlist->setCurrentRow(nextRow);
+    onPlayClicked(); // Сразу начинаем играть
 }
 
 void MainWindow::onPrevClicked() {
-    // Здесь можно добавить код для перехода к предыдущему треку
+    int count = m_playlist->count();
+    if (count == 0) return;
+
+    int currentRow = m_playlist->currentRow();
+
+    // Вычисляем предыдущий индекс. Если мы на первом треке, перепрыгиваем в самый конец
+    int prevRow = (currentRow - 1 + count) % count;
+
+    m_playlist->setCurrentRow(prevRow);
+    onPlayClicked(); // Сразу начинаем играть
 }
-
-
 
 void MainWindow::updatePosition(qint64 position) {
     // Обновляем ползунок только если пользователь не перетаскивает его вручную
@@ -107,17 +129,12 @@ void MainWindow::updatePosition(qint64 position) {
 void MainWindow::setDuration(qint64 duration) {
     m_sliderProgress->setRange(0, static_cast<int>(duration));
 }
-
-void MainWindow::setPosition(int position) {
- 
+void MainWindow::onPauseClicked() {
+    m_player->pause();
+    m_btnPause->hide();
+    m_btnPlay->show();
 }
-
-void MainWindow::onTrackDoubleClicked(QListWidgetItem* item) {
-    // Достаем ссылку на MP3-файл, привязанную к этому элементу списка
-    QString url = m_trackUrls[item];
-
-    m_lblCurrentTrack->setText("Играет: " + item->text());
-    m_player->play(url.toStdString());
+void MainWindow::setPosition(int position) {
 }
 
 void MainWindow::setupUi() {
@@ -151,14 +168,15 @@ void MainWindow::setupUi() {
 
     m_btnPrev = new QPushButton("⏮", this);
     m_btnPlay = new QPushButton("▶ Play", this);
-    m_btnStop = new QPushButton("⏹ Stop", this);
+    m_btnPause = new QPushButton("⏸ Pause", this);
+    
     m_btnNext = new QPushButton("⏭", this);
-    m_btnStop->hide(); // Скрываем кнопку стоп изначально
+	m_btnPause->hide(); // Сначала скрываем кнопку паузы, так как трек не играет
 
     controlsLayout->addStretch(); // Сдвигает кнопки в центр
     controlsLayout->addWidget(m_btnPrev);
     controlsLayout->addWidget(m_btnPlay);
-    controlsLayout->addWidget(m_btnStop);
+    controlsLayout->addWidget(m_btnPause);
     controlsLayout->addWidget(m_btnNext);
     controlsLayout->addStretch();
 

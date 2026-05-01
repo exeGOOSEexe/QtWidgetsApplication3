@@ -17,6 +17,7 @@ public:
 	void play(std::string url);
 	void stop();
 	void pause();
+	void resume();
 	void next();
 	void before();
 

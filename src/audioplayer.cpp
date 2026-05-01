@@ -11,9 +11,12 @@ extern "C"
 #include <QAudioDevice>
 #include <vector>
 #include <algorithm>
+#include <QDebug>
 
 AudioPlayer::AudioPlayer(QObject* parent) : QObject(parent)
 {
+	avformat_network_init();
+
 	m_stopFlag = false;
 
 	QAudioDevice device = QMediaDevices::defaultAudioOutput();
@@ -30,12 +33,14 @@ AudioPlayer::AudioPlayer(QObject* parent) : QObject(parent)
 		if (m_audioDevice) {
 			m_audioDevice->write(data);
 		}
-		});
+		}, Qt::DirectConnection);
 }
 
 AudioPlayer::~AudioPlayer()
 {
 	stop();
+
+	avformat_network_deinit();
 }
 
 void AudioPlayer::play(std::string url)
@@ -54,9 +59,12 @@ void AudioPlayer::stop()
 
 void AudioPlayer::pause()
 {
-	if (m_audioSink) {
-		m_audioSink->suspend();
-	}
+	m_audioSink->suspend();
+}
+
+void AudioPlayer::resume()
+{
+	m_audioSink->resume();
 }
 
 void AudioPlayer::next() {}
@@ -82,6 +90,8 @@ void AudioPlayer::decodingLoop(std::string url)
 
 	if (ret < 0)
 	{
+		char errbuf[128];
+		av_strerror(ret, errbuf, sizeof(errbuf));
 		avformat_free_context(s);
 		return;
 	}
