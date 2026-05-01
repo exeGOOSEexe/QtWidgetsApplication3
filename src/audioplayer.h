@@ -7,9 +7,9 @@
 #include <thread>
 #include <atomic>
 
-class AudioPlayer : public QObject
-{
+class AudioPlayer : public QObject {
 	Q_OBJECT
+
 public:
 	explicit AudioPlayer(QObject* parent = nullptr);
 	~AudioPlayer();
@@ -19,7 +19,16 @@ public:
 	void pause();
 	void next();
 	void before();
-	
+
+	// Новые методы для управления из интерфейса
+	void setVolume(int volume);
+	void setPosition(int64_t ms);
+
+signals:
+	// Сигналы для передачи времени в интерфейс (ползунок прогресса)
+	void durationChanged(int64_t duration_ms);
+	void positionChanged(int64_t position_ms);
+
 private:
 	void decodingLoop(std::string url);
 
@@ -28,4 +37,7 @@ private:
 
 	std::atomic<bool> m_stopFlag;
 	std::thread m_decodingThread;
+
+	// Переменная для безопасной перемотки между потоками (-1 значит перемотка не нужна)
+	std::atomic<int64_t> m_seekTarget{ -1 };
 };

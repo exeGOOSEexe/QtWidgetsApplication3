@@ -1,14 +1,16 @@
 extern "C"
 {
-	#include <libavformat/avformat.h>
-	#include <libavcodec/avcodec.h>
-	#include <libswresample/swresample.h>
-	#include <libavutil/avutil.h>
-	#include <libavutil/audio_fifo.h> 
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libswresample/swresample.h>
+#include <libavutil/avutil.h>
+#include <libavutil/audio_fifo.h> 
 }
 #include "audioplayer.h"
 #include <QMediaDevices>
 #include <QAudioDevice>
+#include <vector>
+#include <algorithm>
 
 AudioPlayer::AudioPlayer(QObject* parent) : QObject(parent)
 {
@@ -16,11 +18,10 @@ AudioPlayer::AudioPlayer(QObject* parent) : QObject(parent)
 
 	QAudioDevice device = QMediaDevices::defaultAudioOutput();
 
-	// 2. Настраиваем формат (например, 44.1кГц, Стерео, Float)
 	QAudioFormat format;
 	format.setSampleRate(44100);
 	format.setChannelCount(2);
-	format.setSampleFormat(QAudioFormat::Int16); // Или Float
+	format.setSampleFormat(QAudioFormat::Int16);
 
 	m_audioSink = new QAudioSink(device, format, this);
 	m_audioDevice = m_audioSink->start();
@@ -38,25 +39,36 @@ void AudioPlayer::play(std::string url)
 
 	m_decodingThread = std::thread(&AudioPlayer::decodingLoop, this, url);
 }
+
 void AudioPlayer::stop()
 {
 	m_stopFlag = true;
 	if (m_decodingThread.joinable()) m_decodingThread.join();
 }
+
 void AudioPlayer::pause()
 {
-	m_audioSink->suspend();
+	if (m_audioSink) {
+		m_audioSink->suspend();
+	}
+}
 
-}
-void AudioPlayer::next()
-{
-	// как можно реализовать эту функцию?
-	// Ответ: 
-}
-void AudioPlayer::before()
-{
+void AudioPlayer::next() {}
+void AudioPlayer::before() {}
 
+void AudioPlayer::setVolume(int volume)
+{
+	if (m_audioSink) {
+		// Переводим шкалу 0-100 в 0.0-1.0
+		m_audioSink->setVolume(volume / 100.0);
+	}
 }
+
+void AudioPlayer::setPosition(int64_t ms)
+{
+	m_seekTarget = ms;
+}
+
 void AudioPlayer::decodingLoop(std::string url)
 {
 	AVFormatContext* s = avformat_alloc_context();
@@ -69,7 +81,6 @@ void AudioPlayer::decodingLoop(std::string url)
 	}
 
 	int stream_info = avformat_find_stream_info(s, NULL);
-	
 	if (stream_info < 0)
 	{
 		avformat_free_context(s);
@@ -77,21 +88,28 @@ void AudioPlayer::decodingLoop(std::string url)
 	}
 
 	int index = av_find_best_stream(s, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
-	
 	if (index < 0)
 	{
 		avformat_free_context(s);
 		return;
 	}
-	
-	AVCodecParameters* pCodecParameters = s->streams[index]->codecpar;
-	const AVCodec* pCodec = avcodec_find_decoder(pCodecParameters->codec_id);
 
 	AVStream* pStream = s->streams[index];
+
+	// Отправляем длину трека в интерфейс
+	if (s->duration != AV_NOPTS_VALUE) {
+		int64_t duration_ms = s->duration / 1000;
+		emit durationChanged(duration_ms);
+	}
+	m_seekTarget = -1; // Сбрасываем цель перемотки
+
+	AVCodecParameters* pCodecParameters = pStream->codecpar;
+	const AVCodec* pCodec = avcodec_find_decoder(pCodecParameters->codec_id);
+
 	AVCodecContext* pCodecContext = avcodec_alloc_context3(pCodec);
 	avcodec_parameters_to_context(pCodecContext, pStream->codecpar);
 	int codec_open = avcodec_open2(pCodecContext, pCodec, NULL);
-	
+
 	if (codec_open < 0)
 	{
 		avcodec_free_context(&pCodecContext);
@@ -116,19 +134,34 @@ void AudioPlayer::decodingLoop(std::string url)
 		NULL
 	);
 	swr_init(swr);
-	
+
 	AVPacket* packet = av_packet_alloc();
 	AVFrame* frame = av_frame_alloc();
 
 	AVAudioFifo* fifo = av_audio_fifo_alloc(out_sample_fmt, out_ch_layout.nb_channels, 1);
 	AVFrame* resampled_frame = av_frame_alloc();
-	resampled_frame->sample_rate = out_sample_rate;
-	resampled_frame->ch_layout = out_ch_layout;
-	resampled_frame->format = out_sample_fmt;
 
-	while (av_read_frame(s, packet) == 0 && !m_stopFlag)
+	while (!m_stopFlag)
 	{
-		if (packet->stream_index != index) { av_packet_unref(packet); continue; }
+		// 1. Проверка перемотки
+		int64_t targetMs = m_seekTarget.exchange(-1);
+		if (targetMs != -1) {
+			int64_t targetTs = targetMs * 1000; // Переводим мс в микросекунды для FFmpeg
+			av_seek_frame(s, -1, targetTs, AVSEEK_FLAG_BACKWARD);
+			avcodec_flush_buffers(pCodecContext);
+			av_audio_fifo_reset(fifo);
+		}
+
+		// 2. Чтение кадра
+		if (av_read_frame(s, packet) < 0) {
+			break; // Конец файла
+		}
+
+		if (packet->stream_index != index) {
+			av_packet_unref(packet);
+			continue;
+		}
+
 		int send_packet = avcodec_send_packet(pCodecContext, packet);
 		if (send_packet < 0)
 		{
@@ -137,12 +170,24 @@ void AudioPlayer::decodingLoop(std::string url)
 
 		while ((send_packet = avcodec_receive_frame(pCodecContext, frame)) == 0)
 		{
+			// Отправляем текущую позицию в интерфейс
+			if (frame->pts != AV_NOPTS_VALUE) {
+				int64_t posMs = frame->pts * av_q2d(pStream->time_base) * 1000;
+				emit positionChanged(posMs);
+			}
+
+			// ИСПРАВЛЕНИЕ: Заново задаем параметры после unref
+			resampled_frame->sample_rate = out_sample_rate;
+			resampled_frame->ch_layout = out_ch_layout;
+			resampled_frame->format = out_sample_fmt;
+
 			int conv = swr_convert_frame(swr, resampled_frame, frame);
 			av_audio_fifo_write(fifo, (void**)resampled_frame->data, resampled_frame->nb_samples);
+
 			av_frame_unref(resampled_frame);
 			av_frame_unref(frame);
 
-			while (av_audio_fifo_size(fifo) > 0)
+			while (av_audio_fifo_size(fifo) > 0 && !m_stopFlag)
 			{
 				int bytes_free = m_audioSink->bytesFree();
 
@@ -158,15 +203,17 @@ void AudioPlayer::decodingLoop(std::string url)
 					}
 				}
 				else {
-					// Колонкам нужно время проиграть звук, спим 10 миллисекунд
+					// Буфер полон, ждем 10 мс
 					std::this_thread::sleep_for(std::chrono::milliseconds(10));
 				}
+
 				if (av_audio_fifo_size(fifo) < 22050) break;
 			}
 		}
 		av_packet_unref(packet);
 	}
-	av_packet_free(&packet); 
+
+	av_packet_free(&packet);
 	av_frame_free(&resampled_frame);
 	av_frame_free(&frame);
 	swr_free(&swr);

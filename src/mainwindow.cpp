@@ -3,22 +3,70 @@
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_player = new AudioPlayer(this);
+    m_audioOutput = new QAudioOutput(this);
 
     setupUi();
     applyDarkTheme();
-
-    // Заполняем плейлист тестовыми данными (позже будешь брать их из JSON/БД)
-    m_playlist->addItem("http://localhost:8000/music/01.mp3");
-    m_playlist->addItem("http://localhost:8000/music/02.mp3");
-
     // Подключаем кнопки к функциям
     connect(m_btnPlay, &QPushButton::clicked, this, &MainWindow::onPlayClicked);
     connect(m_btnStop, &QPushButton::clicked, this, &MainWindow::onStopClicked);
     connect(m_playlist, &QListWidget::itemDoubleClicked, this, &MainWindow::onTrackDoubleClicked);
+	m_networkManager = new QNetworkAccessManager(this);
+	connect(m_networkManager, &QNetworkAccessManager::finished, this, &MainWindow::onTracksReceived);
+    QNetworkRequest request(QUrl("http://2.26.67.101:8000/tracks"));
+	m_networkManager->get(request);
 }
 
 MainWindow::~MainWindow() {
-    // m_player удалится автоматически, т.к. мы передали this в конструктор
+}
+
+void MainWindow::onTracksReceived(QNetworkReply* reply) {
+    if (reply->error() != QNetworkReply::NoError) {
+        m_lblCurrentTrack->setText("Ошибка сети: " + reply->errorString());
+        reply->deleteLater();
+        return;
+    }
+
+    // Читаем ответ сервера
+    QByteArray responseData = reply->readAll();
+
+    // Парсим JSON
+    QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+    if (!jsonDoc.isArray()) {
+        m_lblCurrentTrack->setText("Ошибка: сервер вернул не массив");
+        reply->deleteLater();
+        return;
+    }
+
+    QJsonArray jsonArray = jsonDoc.array();
+    m_playlist->clear(); // Очищаем список перед загрузкой
+    m_trackUrls.clear(); // Очищаем карту ссылок
+
+    // Перебираем все треки из базы данных
+    for (int i = 0; i < jsonArray.size(); ++i) {
+        QJsonObject trackObj = jsonArray[i].toObject();
+
+        // Вытаскиваем данные (согласно моделям FastAPI)
+        QString title = trackObj["title"].toString();
+        QString author = trackObj["author"].toString();
+        QString fileUrl = trackObj["file_url"].toString();
+
+        // Создаем красивую строчку для списка: "Автор - Название"
+        QString displayString = author + " - " + title;
+        QListWidgetItem* item = new QListWidgetItem(displayString, m_playlist);
+
+        // Сохраняем реальную ссылку на MP3 в словарь (чтобы потом передать в плеер)
+        m_trackUrls[item] = fileUrl;
+    }
+
+    if (m_playlist->count() > 0) {
+        m_lblCurrentTrack->setText("Треки успешно загружены!");
+    }
+    else {
+        m_lblCurrentTrack->setText("На сервере пока нет треков");
+    }
+
+    reply->deleteLater(); // Очищаем память
 }
 
 void MainWindow::onPlayClicked() {
@@ -27,22 +75,57 @@ void MainWindow::onPlayClicked() {
         QString url = item->text();
         m_lblCurrentTrack->setText("Играет: " + url);
         m_player->play(url.toStdString());
+        
+        m_btnPlay->hide();
+        m_btnStop->show();
     }
 }
 
 void MainWindow::onStopClicked() {
     m_player->stop();
     m_lblCurrentTrack->setText("Остановлено");
+    
+    m_btnStop->hide();
+    m_btnPlay->show();
+}
+
+void MainWindow::onNextClicked() {
+    // Здесь можно добавить код для перехода к следующему треку
+}
+
+void MainWindow::onPrevClicked() {
+    // Здесь можно добавить код для перехода к предыдущему треку
+}
+
+void MainWindow::setVolume(int volume) {
+    m_audioOutput->setVolume(volume / 100.0);
+}
+
+void MainWindow::updatePosition(qint64 position) {
+    // Обновляем ползунок только если пользователь не перетаскивает его вручную
+    if (!m_sliderProgress->isSliderDown()) {
+        m_sliderProgress->setValue(static_cast<int>(position));
+    }
+}
+
+void MainWindow::setDuration(qint64 duration) {
+    m_sliderProgress->setRange(0, static_cast<int>(duration));
+}
+
+void MainWindow::setPosition(int position) {
+ 
 }
 
 void MainWindow::onTrackDoubleClicked(QListWidgetItem* item) {
-    QString url = item->text();
-    m_lblCurrentTrack->setText("Играет: " + url);
+    // Достаем ссылку на MP3-файл, привязанную к этому элементу списка
+    QString url = m_trackUrls[item];
+
+    m_lblCurrentTrack->setText("Играет: " + item->text());
     m_player->play(url.toStdString());
 }
 
 void MainWindow::setupUi() {
-    this->setWindowTitle("Аудио Стриминг");
+    this->setWindowTitle("AudioStreamPlayer");
     this->resize(600, 400);
 
     // Главный виджет, который займет всё окно
@@ -63,6 +146,8 @@ void MainWindow::setupUi() {
 
     // 3. Ползунок прогресса (горизонтальный)
     m_sliderProgress = new QSlider(Qt::Horizontal, this);
+    // Подключаем перетаскивание ползунка к перемотке трека
+    connect(m_sliderProgress, &QSlider::sliderMoved, this, &MainWindow::setPosition);
     mainLayout->addWidget(m_sliderProgress);
 
     // 4. Панель кнопок (горизонтальный слой)
@@ -70,14 +155,13 @@ void MainWindow::setupUi() {
 
     m_btnPrev = new QPushButton("⏮", this);
     m_btnPlay = new QPushButton("▶ Play", this);
-    m_btnPause = new QPushButton("⏸", this);
     m_btnStop = new QPushButton("⏹ Stop", this);
     m_btnNext = new QPushButton("⏭", this);
+    m_btnStop->hide(); // Скрываем кнопку стоп изначально
 
     controlsLayout->addStretch(); // Сдвигает кнопки в центр
     controlsLayout->addWidget(m_btnPrev);
     controlsLayout->addWidget(m_btnPlay);
-    controlsLayout->addWidget(m_btnPause);
     controlsLayout->addWidget(m_btnStop);
     controlsLayout->addWidget(m_btnNext);
     controlsLayout->addStretch();
@@ -86,14 +170,41 @@ void MainWindow::setupUi() {
 
     // 5. Ползунок громкости (в отдельном слое)
     QHBoxLayout* volLayout = new QHBoxLayout();
+    
     volLayout->addWidget(new QLabel("🔊", this));
     m_sliderVolume = new QSlider(Qt::Horizontal, this);
     m_sliderVolume->setRange(0, 100);
-    m_sliderVolume->setValue(50);
-    m_sliderVolume->setMaximumWidth(150); // Делаем его коротким
+    m_sliderVolume->setValue(70); // Синхронизируем начальное значение ползунка
+    m_sliderVolume->setPageStep(1);
+    m_audioOutput->setVolume(0.7);
+    m_sliderVolume->setMaximumWidth(100); // Делаем его коротким
+    // Подключаем изменение значения ползунка к изменению громкости
     volLayout->addWidget(m_sliderVolume);
 
     mainLayout->addLayout(volLayout);
+
+    // 1. Связываем изменение ползунка громкости с плеером
+    connect(m_sliderVolume, &QSlider::valueChanged, m_player, &AudioPlayer::setVolume);
+
+    // 2. При загрузке трека устанавливаем максимум ползунка прогресса (длину трека)
+    connect(m_player, &AudioPlayer::durationChanged, this, [this](int64_t duration) {
+        m_sliderProgress->setMaximum(duration);
+        });
+
+    // 3. Во время воспроизведения ползунок ползет вперед
+    connect(m_player, &AudioPlayer::positionChanged, this, [this](int64_t pos) {
+        // Важно: двигаем ползунок программно, ТОЛЬКО если пользователь сам его сейчас не тащит мышкой
+        if (!m_sliderProgress->isSliderDown()) {
+            m_sliderProgress->blockSignals(true); // Блокируем сигналы, чтобы не зациклить перемотку
+            m_sliderProgress->setValue(pos);
+            m_sliderProgress->blockSignals(false);
+        }
+        });
+
+  
+    connect(m_sliderProgress, &QSlider::sliderReleased, this, [this]() {
+        m_player->setPosition(m_sliderProgress->value());
+        });
 }
 
 void MainWindow::applyDarkTheme() {
