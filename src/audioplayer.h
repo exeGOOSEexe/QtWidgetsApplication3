@@ -28,7 +28,7 @@ signals:
 	// Сигналы для передачи времени в интерфейс (ползунок прогресса)
 	void durationChanged(int64_t duration_ms);
 	void positionChanged(int64_t position_ms);
-
+	void audioDataReady(const QByteArray& data);
 private:
 	void decodingLoop(std::string url);
 

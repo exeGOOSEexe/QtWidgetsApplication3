@@ -3,8 +3,6 @@
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     m_player = new AudioPlayer(this);
-    m_audioOutput = new QAudioOutput(this);
-
     setupUi();
     applyDarkTheme();
     // Подключаем кнопки к функциям
@@ -13,7 +11,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(m_playlist, &QListWidget::itemDoubleClicked, this, &MainWindow::onTrackDoubleClicked);
 	m_networkManager = new QNetworkAccessManager(this);
 	connect(m_networkManager, &QNetworkAccessManager::finished, this, &MainWindow::onTracksReceived);
-    QNetworkRequest request(QUrl("http://2.26.67.101:8000/tracks"));
+    QNetworkRequest request(QUrl("http://ip:port/tracks"));
 	m_networkManager->get(request);
 }
 
@@ -97,9 +95,7 @@ void MainWindow::onPrevClicked() {
     // Здесь можно добавить код для перехода к предыдущему треку
 }
 
-void MainWindow::setVolume(int volume) {
-    m_audioOutput->setVolume(volume / 100.0);
-}
+
 
 void MainWindow::updatePosition(qint64 position) {
     // Обновляем ползунок только если пользователь не перетаскивает его вручную
@@ -176,7 +172,7 @@ void MainWindow::setupUi() {
     m_sliderVolume->setRange(0, 100);
     m_sliderVolume->setValue(70); // Синхронизируем начальное значение ползунка
     m_sliderVolume->setPageStep(1);
-    m_audioOutput->setVolume(0.7);
+    m_player->setVolume(70);
     m_sliderVolume->setMaximumWidth(100); // Делаем его коротким
     // Подключаем изменение значения ползунка к изменению громкости
     volLayout->addWidget(m_sliderVolume);

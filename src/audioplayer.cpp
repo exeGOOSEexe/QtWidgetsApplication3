@@ -25,6 +25,12 @@ AudioPlayer::AudioPlayer(QObject* parent) : QObject(parent)
 
 	m_audioSink = new QAudioSink(device, format, this);
 	m_audioDevice = m_audioSink->start();
+	// Добавь это в конструктор AudioPlayer (после m_audioDevice = m_audioSink->start();)
+	connect(this, &AudioPlayer::audioDataReady, this, [this](const QByteArray& data) {
+		if (m_audioDevice) {
+			m_audioDevice->write(data);
+		}
+		});
 }
 
 AudioPlayer::~AudioPlayer()
@@ -199,7 +205,8 @@ void AudioPlayer::decodingLoop(std::string url)
 						char* bufPtr = buffer.data();
 
 						av_audio_fifo_read(fifo, (void**)&bufPtr, samplesToRead);
-						m_audioDevice->write(buffer.data(), bytesToRead);
+						QByteArray outData(buffer.data(), bytesToRead);
+						emit audioDataReady(outData);
 					}
 				}
 				else {
