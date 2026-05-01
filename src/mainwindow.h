@@ -52,7 +52,6 @@ private:
     QPushButton* m_btnPlay;
     QPushButton* m_btnNext;
 	QPushButton* m_btnPause;
-
     QNetworkAccessManager* m_networkManager;
     std::map<QListWidgetItem*, QString> m_trackUrls;
 };

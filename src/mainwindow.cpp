@@ -8,14 +8,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     connect(m_btnPlay, &QPushButton::clicked, this, &MainWindow::onPlayClicked);
     connect(m_playlist, &QListWidget::itemDoubleClicked, this, &MainWindow::onTrackDoubleClicked);
+    connect(m_btnPause, &QPushButton::clicked, this, &MainWindow::onPauseClicked);
     connect(m_btnNext, &QPushButton::clicked, this, &MainWindow::onNextClicked);
     connect(m_btnPrev, &QPushButton::clicked, this, &MainWindow::onPrevClicked);
-    connect(m_btnPause, &QPushButton::clicked, this, &MainWindow::onPauseClicked);
 
 	m_networkManager = new QNetworkAccessManager(this);
 	connect(m_networkManager, &QNetworkAccessManager::finished, this, &MainWindow::onTracksReceived);
 
-    QNetworkRequest request(QUrl("http://ip:port/tracks"));
+    QNetworkRequest request(QUrl("http:///tracks"));
 	m_networkManager->get(request);
 }
 
@@ -72,17 +72,29 @@ void MainWindow::onTracksReceived(QNetworkReply* reply) {
 }
 
 void MainWindow::onPlayClicked() {
+    if (m_player && m_btnPause->isHidden()) {
+        m_player->resume();
+        m_btnPlay->hide();
+        m_btnPause->show();
+        return;
+    }
+
+    // Иначе запускаем трек с нуля (твой старый код)
     QListWidgetItem* item = m_playlist->currentItem();
     if (item) {
-        // ИСПРАВЛЕНИЕ: Берем реальную ссылку из словаря m_trackUrls, а не из текста
         QString url = m_trackUrls[item];
-
         m_lblCurrentTrack->setText("Играет: " + item->text());
         m_player->play(url.toStdString());
 
         m_btnPlay->hide();
-        m_btnPause->show();
+        m_btnPause->show(); // Показываем паузу
     }
+}
+
+void MainWindow::onPauseClicked() {
+    m_player->pause();
+    m_btnPause->hide();
+    m_btnPlay->show(); // Показываем Play для возобновления
 }
 
 void MainWindow::onTrackDoubleClicked(QListWidgetItem* item) {
@@ -129,11 +141,7 @@ void MainWindow::updatePosition(qint64 position) {
 void MainWindow::setDuration(qint64 duration) {
     m_sliderProgress->setRange(0, static_cast<int>(duration));
 }
-void MainWindow::onPauseClicked() {
-    m_player->pause();
-    m_btnPause->hide();
-    m_btnPlay->show();
-}
+
 void MainWindow::setPosition(int position) {
 }
 
@@ -169,9 +177,9 @@ void MainWindow::setupUi() {
     m_btnPrev = new QPushButton("⏮", this);
     m_btnPlay = new QPushButton("▶ Play", this);
     m_btnPause = new QPushButton("⏸ Pause", this);
-    
     m_btnNext = new QPushButton("⏭", this);
-	m_btnPause->hide(); // Сначала скрываем кнопку паузы, так как трек не играет
+
+    m_btnPause->hide();
 
     controlsLayout->addStretch(); // Сдвигает кнопки в центр
     controlsLayout->addWidget(m_btnPrev);
