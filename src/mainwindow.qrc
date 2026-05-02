@@ -1,4 +1,5 @@
 <RCC>
-    <qresource prefix="/QtWidgetsApplication3"/>
-    <qresource prefix="/mainwindow"/>
+    <qresource prefix="/mainwindow">
+        <file>main.qml</file>
+    </qresource>
 </RCC>

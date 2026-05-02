@@ -37,7 +37,7 @@
   </ImportGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'" Label="QtSettings">
     <QtInstall>6.11.0_msvc2022_64</QtInstall>
-    <QtModules>core;gui;httpserver;multimedia;multimediawidgets;network;networkauth;widgets</QtModules>
+    <QtModules>core;gui;network;widgets;multimedia;multimediawidgets;chartsqml;datavisualizationqml;networkauth;httpserver</QtModules>
     <QtBuildConfig>debug</QtBuildConfig>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'" Label="QtSettings">
@@ -110,6 +110,12 @@
   </ItemGroup>
   <ItemGroup>
     <QtMoc Include="src\audioplayer.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="C:\Users\user\Downloads\Telegram Desktop\icon.svg" />
+    <None Include="qml src\main.qml" />
+    <None Include="src\icon.svg" />
+    <None Include="src\main.qml" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Condition="Exists('$(QtMsBuild)\qt.targets')">

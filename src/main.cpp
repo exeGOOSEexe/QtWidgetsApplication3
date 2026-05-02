@@ -1,14 +1,14 @@
-#include <QApplication>
-#include "MainWindow.h"
+п»ї#include <QGuiApplication>
+#include <QQmlApplicationEngine>
 
-int main(int argc, char* argv[]) {
-    QApplication a(argc, argv);
+int main(int argc, char* argv[])
+{
+    QGuiApplication app(argc, argv);
 
-    // Устанавливаем современный стиль для приложения (важно для Windows)
-    a.setStyle("Fusion");
+    QQmlApplicationEngine engine;
+    engine.load(QUrl(QStringLiteral("qrc:/mainwindow/main.qml")));
+    if (engine.rootObjects().isEmpty())
+        return -1;
 
-    MainWindow w;
-    w.show();
-
-    return a.exec();
+    return app.exec();
 }

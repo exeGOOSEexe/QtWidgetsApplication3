@@ -49,4 +49,14 @@
       <Filter>Header Files</Filter>
     </QtMoc>
   </ItemGroup>
+  <ItemGroup>
+    <None Include="src\main.qml">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="qml src\main.qml">
+      <Filter>Source Files</Filter>
+    </None>
+    <None Include="C:\Users\user\Downloads\Telegram Desktop\icon.svg" />
+    <None Include="src\icon.svg" />
+  </ItemGroup>
 </Project>

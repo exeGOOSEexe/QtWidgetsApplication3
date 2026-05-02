@@ -48,7 +48,12 @@ void AudioPlayer::play(std::string url)
 	stop();
 	m_stopFlag = false;
 
+	if (m_audioSink->state() == QAudio::SuspendedState) {
+		m_audioSink->resume();
+	}
+
 	m_decodingThread = std::thread(&AudioPlayer::decodingLoop, this, url);
+	
 }
 
 void AudioPlayer::stop()
